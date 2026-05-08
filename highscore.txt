@@ -1,0 +1,5 @@
+nimo: 2
+nimo: 1
+nimo: 0
+hello: 2
+hello: 4

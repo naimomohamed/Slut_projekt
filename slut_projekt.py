@@ -1,113 +1,245 @@
 import random
+import time
+import requests
+import json
+import html
 
-high_scores = []
+
+# =====================
+# FILHANTERING (JSON)
+# =====================
+def skapa_fil_om_den_inte_finns():
+    try:
+        with open("highscore.json", "r", encoding="utf-8") as fil:
+            json.load(fil)
+    except:
+        with open("highscore.json", "w", encoding="utf-8") as fil:
+            json.dump([], fil)
 
 
-class Quiz:
+def spara_score(namn, poang):
+    try:
+        with open("highscore.json", "r", encoding="utf-8") as fil:
+            data = json.load(fil)
+    except:
+        data = []
+
+    data.append({"name": namn, "score": poang})
+
+    with open("highscore.json", "w", encoding="utf-8") as fil:
+        json.dump(data, fil, indent=4, ensure_ascii=False)
+
+
+def visa_highscore():
+    try:
+        with open("highscore.json", "r", encoding="utf-8") as fil:
+            data = json.load(fil)
+
+        if not data:
+            print("Ingen highscore än.")
+            return
+
+        data.sort(key=lambda x: x["score"], reverse=True)
+
+        print("\n--- TOP HIGH SCORES ---")
+        for item in data[:5]:
+            print(f"{item['name']} | {item['score']}")
+
+    except:
+        print("Fel vid läsning av highscore.")
+
+
+def rensa_highscore():
+    with open("highscore.json", "w", encoding="utf-8") as fil:
+        json.dump([], fil)
+    print("Highscore rensad!")
+
+
+# =====================
+# KLASSER (OOP + POLYMORFI)
+# =====================
+class BaseQuestion:
+    def __init__(self, text, answer):
+        self.text = text
+        self.answer = answer
+
+    def ask(self):
+        pass
+
+
+class MultipleChoiceQuestion(BaseQuestion):
+    def __init__(self, text, options, answer):
+        super().__init__(text, answer)
+        self.options = options
+
+    def ask(self):
+        print("\n" + self.text)
+
+        for i, option in enumerate(self.options, 1):
+            print(f"{i}. {option}")
+
+        try:
+            choice = int(input("Svar: "))
+
+            if 1 <= choice <= len(self.options):
+                if self.options[choice - 1].lower() == self.answer.lower():
+                    print("Rätt! ")
+                    return True
+                else:
+                    print("Fel! Rätt svar:", self.answer)
+                    return False
+            else:
+                print("Ogiltigt val!")
+                return False
+
+        except ValueError:
+            print("Du måste skriva en siffra!")
+            return False
+
+
+# =====================
+# API HANDLER
+# =====================
+class APIHandler:
     def __init__(self):
-        self.score = 0
+        self.url = "https://opentdb.com/api.php"
 
-        self.categories = {
-            "1": ("Historia", [
-                ("När började första världskriget?", ["1914", "1939", "1900", "1920"], "1914"),
-                ("Vem upptäckte Amerika?", ["Columbus", "Newton", "Einstein", "Darwin"], "Columbus"),
-                ("När slutade andra världskriget?", ["1945", "1939", "1918", "1960"], "1945")
-            ]),
-
-            "2": ("Geografi", [
-                ("Vad är Sveriges huvudstad?", ["Göteborg", "Stockholm", "Malmö", "Uppsala"], "Stockholm"),
-                ("Vilket är största havet?", ["Atlanten", "Indiska oceanen", "Stilla havet", "Arktiska"], "Stilla havet"),
-                ("Vilket land är störst?", ["Sverige", "Ryssland", "USA", "Kina"], "Ryssland")
-            ]),
-
-            "3": ("General Knowledge", [
-                ("Hur många dagar har ett år?", ["364", "365", "366", "360"], "365"),
-                ("Vilket språk talas i Brasilien?", ["Spanska", "Portugisiska", "Engelska", "Franska"], "Portugisiska"),
-                ("Hur många ben har en spindel?", ["6", "8", "10", "12"], "8")
-            ]),
-
-            "4": ("Sport", [
-                ("Hur många spelare i fotboll?", ["9", "10", "11", "12"], "11"),
-                ("Vilken sport har puck?", ["Tennis", "Fotboll", "Ishockey", "Basket"], "Ishockey"),
-                ("Hur många perioder i hockey?", ["2", "3", "4", "5"], "3")
-            ]),
-
-            "5": ("Random", [
-                ("Blå + gul blir?", ["Grön", "Röd", "Lila", "Orange"], "Grön"),
-                ("Hur många ben har en katt?", ["2", "4", "6", "8"], "4"),
-                ("Vad är 2+2?", ["3", "4", "5", "6"], "4")
-            ])
+    def get_questions(self, amount=5, difficulty="easy"):
+        params = {
+            "amount": amount,
+            "type": "multiple",
+            "difficulty": difficulty
         }
 
-    def choose_category(self):
-        print("\nVälj kategori:")
+        try:
+            response = requests.get(self.url, params=params)
+            data = response.json()
 
-        for key, value in self.categories.items():
-            print(key + ".", value[0])
+            questions = []
 
-        choice = input("Val: ")
+            for item in data["results"]:
+                options = item["incorrect_answers"] + [item["correct_answer"]]
+                random.shuffle(options)
 
-        if choice in self.categories:
-            return self.categories[choice][1]
-        else:
-            print("Fel val!")
-            return None
+                questions.append(
+                    MultipleChoiceQuestion(
+                        html.unescape(item["question"]),
+                        options,
+                        html.unescape(item["correct_answer"])
+                    )
+                )
 
-    def play(self, questions, name):
+            return questions
+
+        except:
+            print("Fel vid API-anrop!")
+            return []
+
+
+# =====================
+# QUIZ
+# =====================
+class Quiz:
+    def __init__(self, namn):
         self.score = 0
-        random.shuffle(questions)
+        self.namn = namn
 
-        print("\n--- Quiz startar ---")
+    def start(self, questions):
+        self.score = 0
+        start_time = time.time()
 
-        for i, (text, options, answer) in enumerate(questions[:10], 1):
-            print(f"\n{i}. {text}")
+        for q in questions:
+            if q.ask():
+                self.score += 1
 
-            for j in range(len(options)):
-                print(f"{j+1}. {options[j]}")
+        end_time = time.time()
+        self.show_result(end_time - start_time, len(questions))
 
-            try:
-                user = int(input("Svar: "))
+    def show_result(self, time_used, total):
+        print("\n--- RESULTAT ---")
+        print(f"Namn: {self.namn}")
+        print(f"Poäng: {self.score}/{total}")
+        print(f"Tid: {round(time_used, 2)} sekunder")
 
-                if 1 <= user <= 4 and options[user - 1].lower() == answer.lower():
-                    print("Rätt!")
-                    self.score += 1
-                else:
-                    print("Fel! Rätt svar:", answer)
+        if self.score == total:
+            print("Perfekt!")
+        elif self.score > total / 2:
+            print("Bra jobbat! ")
+        else:
+            print("Öva mer! ")
 
-            except:
-                print("Fel inmatning!")
-
-        print("\n--- KLAR ---")
-        print(name, "du fick", self.score, "av", len(questions[:10]), "rätt!")
-
-        high_scores.append((name, self.score))
+        spara_score(self.namn, self.score)
 
 
+# =====================
+# LOKALA FRÅGOR
+# =====================
+def get_local_questions():
+    return [
+        MultipleChoiceQuestion(
+            "Vad är Sveriges huvudstad?",
+            ["Göteborg", "Stockholm", "Malmö", "Uppsala"],
+            "Stockholm"
+        ),
+        MultipleChoiceQuestion(
+            "Hur många spelare i fotboll?",
+            ["9", "10", "11", "12"],
+            "11"
+        )
+    ]
+
+
+# =====================
+# HUVUDPROGRAM
+# =====================
 def main():
+    skapa_fil_om_den_inte_finns()
+    api = APIHandler()
+
+    namn = input("Skriv ditt namn: ")
+
+    print(f"\nHej {namn}!")
+    start = input("Vill du starta quizet? (ja/nej): ").lower()
+
+    if start != "ja":
+        print(f"Hejdå {namn}!")
+        return
+
     while True:
-        print("\n=== QUIZ ===")
-        print("1. Starta quiz")
-        print("2. Avsluta")
+        print(f"\n=== QUIZ MASTER ({namn}) ===")
+        print("1. Lokala frågor")
+        print("2. API frågor")
+        print("3. Visa highscore")
+        print("4. Rensa highscore")
+        print("5. Avsluta")
 
         choice = input("Val: ")
 
         if choice == "1":
-            name = input("Skriv ditt namn: ")
-
-            quiz = Quiz()
-            questions = quiz.choose_category()
-
-            if questions:
-                quiz.play(questions, name)
-
-                again = input("\nVill du spela igen? (ja/nej): ").lower()
-
-                if again != "ja":
-                    print("Hejdå!")
-                    break
+            quiz = Quiz(namn)
+            quiz.start(get_local_questions())
 
         elif choice == "2":
-            print("Hejdå!")
+            difficulty = input("Välj svårighet (easy/medium/hard): ").lower()
+
+            if difficulty not in ["easy", "medium", "hard"]:
+                print("Ogiltig svårighet!")
+                continue
+
+            questions = api.get_questions(5, difficulty)
+
+            if questions:
+                quiz = Quiz(namn)
+                quiz.start(questions)
+
+        elif choice == "3":
+            visa_highscore()
+
+        elif choice == "4":
+            rensa_highscore()
+
+        elif choice == "5":
+            print(f"Hejdå {namn}! ")
             break
 
         else:
